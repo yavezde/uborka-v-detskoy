@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Уборка в детской</title>
+<meta name="description" content="Пиксельная игра: разложи вещи по местам и наведи порядок в комнате">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧸</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#2a1a2e;--panel:#3d2747;--text:#fff7f0;--gold:#ffd23f;--good:#4cc36a;--bad:#e84a5f;--edge:#1a0f1f}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);overflow:hidden}
+body{font-family:"Press Start 2P",ui-monospace,monospace;user-select:none;-webkit-user-select:none;touch-action:none}
+#wrap{height:100vh;height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:10px 16px}
+#hud{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;font-size:11px;line-height:1}
+.chip{background:var(--panel);border:3px solid var(--edge);padding:8px 10px;box-shadow:inset -3px -3px 0 rgba(0,0,0,.3)}
+.chip.btn{cursor:pointer}
+#stage{position:relative;border:4px solid var(--edge);box-shadow:0 0 0 4px var(--panel),0 12px 40px rgba(0,0,0,.5)}
+canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+#msg{min-height:44px;max-width:640px;width:100%;text-align:center;font-size:11px;line-height:1.7;background:var(--panel);border:3px solid var(--edge);padding:8px 12px;display:flex;align-items:center;justify-content:center}
+#msg.bad{color:#ffb3bd}#msg.good{color:#b6f5c6}
+.ov{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(26,15,31,.78);text-align:center;padding:12px}
+.ov.on{display:flex}
+.ov h1{font-size:clamp(16px,4.4vw,28px);margin:0;color:var(--gold);text-shadow:3px 3px 0 var(--edge);line-height:1.4}
+.ov p{font-size:clamp(9px,2.2vw,12px);line-height:1.8;margin:0;max-width:520px}
+.pbtn{font:inherit;font-size:clamp(10px,2.6vw,14px);color:var(--text);background:#4a7bd0;border:4px solid var(--edge);padding:12px 18px;cursor:pointer;box-shadow:inset -4px -4px 0 rgba(0,0,0,.3),inset 4px 4px 0 rgba(255,255,255,.2)}
+.pbtn:active{transform:translateY(2px)}
+.pbtn.green{background:#3aa55a}.pbtn.gray{background:#6a5a72}
+.lv{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.lv .pbtn{display:flex;flex-direction:column;gap:8px;align-items:center;min-width:120px}
+.lv small{font-size:9px;opacity:.85}
+.stars{font-size:clamp(18px,5vw,30px);letter-spacing:4px}
+.dim{opacity:.25}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div class="chip" id="hLevel">Уровень 1</div>
+    <div class="chip" id="hLeft">Вещей: 0</div>
+    <div class="chip" id="hTime">⏱ 0:00</div>
+    <div class="chip btn" id="hSound">🔊</div>
+    <div class="chip btn" id="hMenu">☰</div>
+  </div>
+  <div id="stage">
+    <canvas id="c" width="160" height="120"></canvas>
+    <div class="ov on" id="ovStart">
+      <h1>Уборка<br>в детской</h1>
+      <p>Ой, какой беспорядок! Перетащи каждую вещь на её место:<br>🧸 игрушки — в ящик, 📚 книги — на полку,<br>👕 одежду — в шкаф, 🍌 мусор — в ведро.</p>
+      <button class="pbtn green" id="bStart">▶ Играть</button>
+    </div>
+    <div class="ov" id="ovLevels">
+      <h1>Выбери уборку</h1>
+      <div class="lv" id="lvList"></div>
+    </div>
+    <div class="ov" id="ovWin">
+      <div class="stars" id="wStars"></div>
+      <h1 id="wTitle">Чисто!</h1>
+      <p id="wInfo"></p>
+      <p id="wTip" style="color:#b6f5c6"></p>
+      <div class="lv">
+        <button class="pbtn gray" id="bAgain">↻ Ещё раз</button>
+        <button class="pbtn green" id="bNext">Дальше ▶</button>
+      </div>
+    </div>
+  </div>
+  <div id="msg">Нажми «Играть»!</div>
+</div>
+
+<script>
+/* ===== палитра и спрайты ===== */
+const PAL = { k:'#2a1a2e', w:'#fff7f0', r:'#e84a5f', b:'#4a7bd0', y:'#ffd23f', G:'#4cc36a', o:'#ff8c2a', p:'#ff8fc8',
+  B:'#6b3e1d', n:'#a0622d', l:'#e8c08c', c:'#8fe0ff', x:'#555566', g:'#9aa0a8', v:'#9b6bd6', d:'#b8b0b8', D:'#ddd5dd' };
+function sprite(rows, over = {}) {
+  const pal = Object.assign({}, PAL, over), h = rows.length, w = Math.max(...rows.map(r => r.length));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const x = cv.getContext('2d');
+  rows.forEach((row, j) => [...row].forEach((ch, i) => { if (ch !== '.' && pal[ch]) { x.fillStyle = pal[ch]; x.fillRect(i, j, 1, 1); } }));
+  return cv;
+}
+const BOOK = ['kkkkkkk.', 'kXXXXXwk', 'kXwwwXwk', 'kXXXXXwk', 'kXXXXXwk', 'kXyyyXwk', 'kXXXXXwk', 'kXXXXXwk', 'kXXXXXwk', '.kkkkkkk'];
+const SHIRT = ['.kkkk..kkkk.', 'kXXXXkkXXXXk', 'kXXXXXXXXXXk', '.kkXXXXXXkk.', '..kXXXXXXk..', '..kXXwwXXk..', '..kXXwwXXk..', '..kXXXXXXk..', '..kXXXXXXk..', '..kkkkkkkk..'];
+const S = {
+  bear: sprite(['.kk....kk.', 'knlk..klnk', '.knnnnnnk.', 'knnknnknnk', 'knnnllnnnk', '.knnlknnk.', '..kknnkk..', '.knnllnnk.', 'knnllllnnk', 'knnllllnnk', '.knnkknnk.', '.kkk..kkk.']),
+  ball: sprite(['..kkkkk..', '.krrwbbk.', 'krrrwbbbk', 'krrrwbbbk', 'kwwwwwwwk', 'kyyywGGGk', 'kyyywGGGk', '.kyywGGk.', '..kkkkk..']),
+  block: sprite(['kkkkkkkk', 'kyyyyyyk', 'kyrrrryk', 'kyryyryk', 'kyrrrryk', 'kyryyryk', 'kyyyyyyk', 'kkkkkkkk']),
+  car: sprite(['...kkkkk....', '..krrcrrk...', '.krccrccrkk.', 'krrrrrrrrrrk', 'krrrrrrrrrrk', 'kkkxxkkkxxkk', '...kk...kk..']),
+  bookR: sprite(BOOK, { X: '#e84a5f' }), bookB: sprite(BOOK, { X: '#4a7bd0' }), bookG: sprite(BOOK, { X: '#4cc36a' }), bookV: sprite(BOOK, { X: '#9b6bd6' }),
+  sock: sprite(['.kkkk..', '.kwwk..', '.kppk..', '.kwwk..', '.kppk..', '.kwwkk.', 'kwwwwwk', 'kwwwwwk', '.kkkkk.']),
+  shirt: sprite(SHIRT, { X: '#4cc36a' }),
+  pants: sprite(['kkkkkkkkkk', 'kbbbbbbbbk', 'kbbbbbbbbk', 'kbbbkkbbbk', 'kbbbkkbbbk', 'kbbk..kbbk', 'kbbk..kbbk', 'kbbk..kbbk', 'kbbk..kbbk', 'kkkk..kkkk']),
+  dress: sprite(['...kkkk...', '..kppppk..', '..kppppk..', '...kppk...', '..kppppk..', '.kppppppk.', '.kppwpppk.', 'kppppppppk', 'kpppwppppk', 'kkkkkkkkkk']),
+  paper: sprite(['.kkkkk.', 'kwwgwwk', 'kwgwwgk', 'kwwwgwk', 'kgwwwwk', '.kkkkk.']),
+  banana: sprite(['....kk....', '....kyk...', '...kyyk...', '..kyyyk...', '.kyykyyk..', 'kyyk.kyyk.', 'kyk...kyk.', '.k.....k..']),
+  apple: sprite(['..kB..', '.krrk.', 'krllrk', '.kllk.', '.kllk.', '.kllk.', 'krllrk', '.krrk.', '..kk..']),
+  candy: sprite(['kk.kkkk.kk', 'kokkppkkok', 'koopppkook', 'kokkppkkok', 'kk.kkkk.kk']),
+  dust: sprite(['..dd.d..', '.dDddDd.', 'ddddDddd', '.dddddd.'])
+};
+const ITEMS = [
+  { n: 'Мишка', cat: 'toy', s: 'bear' }, { n: 'Мяч', cat: 'toy', s: 'ball' }, { n: 'Кубик', cat: 'toy', s: 'block' }, { n: 'Машинка', cat: 'toy', s: 'car' },
+  { n: 'Сказки', cat: 'book', s: 'bookR' }, { n: 'Учебник', cat: 'book', s: 'bookB' }, { n: 'Энциклопедия', cat: 'book', s: 'bookG' }, { n: 'Тетрадь', cat: 'book', s: 'bookV' },
+  { n: 'Носок', cat: 'cloth', s: 'sock' }, { n: 'Футболка', cat: 'cloth', s: 'shirt' }, { n: 'Джинсы', cat: 'cloth', s: 'pants' }, { n: 'Платье', cat: 'cloth', s: 'dress' },
+  { n: 'Бумажка', cat: 'trash', s: 'paper' }, { n: 'Кожура банана', cat: 'trash', s: 'banana' }, { n: 'Огрызок', cat: 'trash', s: 'apple' }, { n: 'Фантик', cat: 'trash', s: 'candy' }
+];
+const TARGETS = {
+  book:  { x: 4,   y: 12, w: 44, h: 26, where: 'на книжную полку', count: 0, open: 0 },
+  cloth: { x: 126, y: 16, w: 32, h: 72, where: 'в шкаф', count: 0, open: 0 },
+  toy:   { x: 4,   y: 66, w: 34, h: 32, where: 'в ящик для игрушек', count: 0, open: 0 },
+  trash: { x: 104, y: 74, w: 20, h: 26, where: 'в мусорное ведро', count: 0, open: 0 }
+};
+const LEVELS = [
+  { name: 'Утро', per: 2, dust: 3, tip: 'Совет: убирай игрушки сразу после игры — тогда порядок держится сам.' },
+  { name: 'После гостей', per: 3, dust: 4, tip: 'Совет: у каждой вещи должен быть свой «домик». Тогда её легко найти!' },
+  { name: 'Генеральная', per: 4, dust: 6, tip: 'Совет: включи любимую песню и убирайся, пока она играет. Одна песня — и комната чистая!' }
+];
+
+/* ===== утилиты ===== */
+const $ = id => document.getElementById(id);
+const R = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('ub_' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('ub_' + k, JSON.stringify(v)); } catch (e) {} }
+};
+const W = 160, H = 120, cv = $('c'), ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const rect = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); };
+const inside = (p, t, pad = 0) => p.x >= t.x - pad && p.x < t.x + t.w + pad && p.y >= t.y - pad && p.y < t.y + t.h + pad;
+
+/* ===== звук (8-бит) ===== */
+let soundOn = store.get('sound', true), actx;
+function tone(seq, type = 'square', vol = .06) {
+  if (!soundOn) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    let t = actx.currentTime;
+    seq.forEach(([f, d]) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type; o.frequency.setValueAtTime(f, t); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + d); t += d * .8;
+    });
+  } catch (e) {}
+}
+const sfx = {
+  pick: () => tone([[660, .05], [880, .05]]),
+  place: () => tone([[784, .07], [988, .07], [1319, .12]]),
+  wrong: () => tone([[220, .12], [165, .18]], 'sawtooth', .05),
+  poof: () => tone([[1200, .04], [900, .04], [600, .06]], 'triangle', .08),
+  win: () => tone([[523, .12], [659, .12], [784, .12], [1047, .25], [784, .1], [1047, .35]])
+};
+
+/* ===== комната (рисуется один раз) ===== */
+const room = document.createElement('canvas'); room.width = W; room.height = H;
+(function bake() {
+  const x = room.getContext('2d'), r = (a, b, c, d, col) => { x.fillStyle = col; x.fillRect(a, b, c, d); };
+  r(0, 0, W, 57, '#f3c9dd'); for (let i = 0; i < W; i += 8) r(i, 0, 4, 55, '#f7d6e6');
+  for (let i = 2; i < W; i += 16) for (let j = 4; j < 52; j += 12) r(i + (j % 24 ? 8 : 0), j, 1, 1, '#e8a9c6');
+  r(0, 55, W, 3, '#fff7f0'); r(0, 58, W, 1, '#c79a8a');
+  r(0, 59, W, 61, '#d79a63');
+  for (let y = 59, j = 0; y < H; y += 6, j++) { r(0, y, W, 1, '#b97b48'); for (let xx = (j % 2) * 20; xx < W; xx += 40) r(xx, y, 1, 6, '#b97b48'); }
+  // окно
+  r(58, 5, 42, 1, '#6b3e1d'); r(62, 8, 34, 28, '#2a1a2e'); r(63, 9, 32, 26, '#fff7f0'); r(65, 11, 28, 22, '#8fd3ff');
+  r(68, 15, 8, 3, '#fff'); r(70, 13, 4, 2, '#fff'); r(82, 25, 8, 3, '#fff'); r(84, 23, 4, 2, '#fff'); r(86, 13, 4, 4, '#ffd23f');
+  r(78, 11, 2, 22, '#fff7f0'); r(65, 21, 28, 2, '#fff7f0');
+  r(58, 6, 6, 32, '#9b6bd6'); r(94, 6, 6, 32, '#9b6bd6'); r(60, 6, 1, 32, '#b98ae6'); r(96, 6, 1, 32, '#b98ae6');
+  // постер со звездой
+  r(104, 12, 16, 18, '#2a1a2e'); r(105, 13, 14, 16, '#4a7bd0');
+  [[111, 16, 2, 2], [109, 18, 6, 2], [110, 20, 4, 3], [109, 23, 2, 2], [113, 23, 2, 2]].forEach(a => r(...a, '#ffd23f'));
+  // коврик
+  r(44, 94, 62, 18, '#2a1a2e'); r(42, 96, 66, 14, '#2a1a2e'); r(45, 95, 60, 16, '#7fc8a9'); r(43, 97, 64, 12, '#7fc8a9');
+  r(47, 101, 56, 2, '#fff7f0'); r(47, 105, 56, 1, '#5aa587'); r(47, 98, 56, 1, '#5aa587');
+  // кровать
+  r(50, 34, 5, 38, '#2a1a2e'); r(51, 35, 3, 36, '#6b3e1d'); r(102, 42, 5, 30, '#2a1a2e'); r(103, 43, 3, 28, '#6b3e1d');
+  r(54, 38, 48, 12, '#2a1a2e'); r(55, 39, 46, 10, '#a0622d'); r(58, 42, 40, 1, '#6b3e1d'); r(58, 45, 40, 1, '#6b3e1d');
+  r(54, 50, 50, 16, '#2a1a2e'); r(55, 51, 48, 14, '#fff7f0');
+  r(57, 48, 14, 7, '#2a1a2e'); r(58, 49, 12, 5, '#fff');
+  r(70, 52, 33, 13, '#4a7bd0'); for (let i = 72; i < 102; i += 6) r(i, 55, 3, 3, '#8fe0ff'); for (let i = 75; i < 102; i += 6) r(i, 60, 3, 3, '#ffd23f');
+  r(54, 65, 50, 3, '#2a1a2e'); r(55, 65, 48, 2, '#6b3e1d');
+})();
+
+/* ===== мебель-цели (с анимацией) ===== */
+const BOOKCOL = ['#e84a5f', '#4a7bd0', '#4cc36a', '#9b6bd6', '#ff8c2a'];
+function drawTargets(hl) {
+  const glow = t => { if (!hl) return; const on = hl === t; ctx.fillStyle = on ? '#ffd23f' : 'rgba(255,255,255,' + (.35 + .25 * Math.sin(frame / 6)) + ')';
+    const T = TARGETS[t]; ctx.fillRect(T.x, T.y, T.w, 1); ctx.fillRect(T.x, T.y + T.h - 1, T.w, 1); ctx.fillRect(T.x, T.y, 1, T.h); ctx.fillRect(T.x + T.w - 1, T.y, 1, T.h); };
+  // полка
+  const sh = TARGETS.book;
+  rect(5, 29, 40, 3, '#2a1a2e'); rect(6, 29, 38, 2, '#a0622d'); rect(9, 32, 2, 4, '#6b3e1d'); rect(39, 32, 2, 4, '#6b3e1d');
+  const spines = 2 + sh.count;
+  for (let i = 0; i < spines; i++) { const hh = 8 + (i * 7) % 3, xx = 8 + i * 3; if (xx > 41) break;
+    rect(xx, 29 - hh, 3, hh, '#2a1a2e'); rect(xx, 29 - hh + 1, 2, hh - 1, BOOKCOL[i % 5]); rect(xx, 29 - hh + 3, 2, 1, '#ffd23f'); }
+  if (sh.open > 0) sparkleAt(26, 18, sh);
+  glow('book');
+  // шкаф
+  const wd = TARGETS.cloth, op = wd.open > 0;
+  rect(127, 18, 30, 68, '#2a1a2e'); rect(128, 19, 28, 66, '#a0622d'); rect(128, 19, 28, 3, '#6b3e1d');
+  if (op) { rect(129, 23, 13, 60, '#3d2747'); rect(130, 26, 11, 1, '#6b3e1d');
+    const cl = ['#4cc36a', '#ff8fc8', '#4a7bd0', '#fff7f0', '#e84a5f'];
+    for (let i = 0; i < Math.min(4, wd.count + 1); i++) rect(130 + i * 3, 27, 2, 14 + (i % 2) * 4, cl[i % 5]);
+    rect(124, 23, 5, 60, '#2a1a2e'); rect(125, 24, 3, 58, '#c47a3a');
+  } else { rect(129, 23, 13, 60, '#b8743c'); rect(141, 23, 1, 60, '#6b3e1d'); rect(139, 50, 1, 4, '#ffd23f'); }
+  rect(142, 23, 13, 60, '#b8743c'); rect(144, 50, 1, 4, '#ffd23f');
+  rect(129, 86, 3, 2, '#2a1a2e'); rect(152, 86, 3, 2, '#2a1a2e');
+  glow('cloth');
+  // ящик для игрушек
+  const bx = TARGETS.toy;
+  if (bx.open > 0) { rect(6, 64, 30, 10, '#2a1a2e'); rect(7, 65, 28, 8, '#c73a4d'); }
+  const peek = ['#ffd23f', '#4a7bd0', '#a0622d', '#e84a5f', '#4cc36a'];
+  for (let i = 0; i < Math.min(6, bx.count); i++) rect(9 + i * 4, 74 - (i % 2) * 2, 4, 4, peek[i % 5]);
+  rect(5, 76, 32, 20, '#2a1a2e'); rect(6, 77, 30, 18, '#e84a5f'); rect(6, 77, 30, 2, '#ff7a8a');
+  [[11, 83], [21, 87], [29, 82]].forEach(([a, b]) => { rect(a, b, 3, 1, '#ffd23f'); rect(a + 1, b - 1, 1, 3, '#ffd23f'); });
+  if (bx.open <= 0) { rect(4, 73, 34, 4, '#2a1a2e'); rect(5, 74, 32, 2, '#c73a4d'); }
+  glow('toy');
+  // ведро
+  const tr = TARGETS.trash, lid = tr.open > 0 ? -5 : 0;
+  rect(107, 82, 14, 16, '#2a1a2e'); rect(108, 83, 12, 14, '#9aa0a8');
+  for (let i = 110; i < 120; i += 3) rect(i, 85, 1, 10, '#7a808a');
+  rect(106, 79 + lid, 16, 3, '#2a1a2e'); rect(107, 80 + lid, 14, 1, '#c0c6ce'); rect(112, 77 + lid, 4, 2, '#2a1a2e');
+  glow('trash');
+}
+function sparkleAt(x, y, t) { if (frame % 4 === 0) parts.push({ x: x + R(-8, 8), y: y + R(-6, 6), vx: 0, vy: -.2, life: 14, col: '#ffd23f' }); }
+
+/* ===== состояние ===== */
+let level = 0, items = [], dust = [], parts = [], drag = null, mistakes = 0, t0 = 0, elapsed = 0, phase = 'menu', frame = 0, flying = [];
+let best = store.get('best', [0, 0, 0]);
+
+function freeSpot(w, h, taken) {
+  for (let tries = 0; tries < 300; tries++) {
+    const onBed = Math.random() < .15;
+    const x = onBed ? R(58, 98 - w) : R(2, W - w - 2), y = onBed ? R(50 - h + 4, 56 - h + 4) : R(62, H - h - 3);
+    const box = { x, y, w, h };
+    if (Object.values(TARGETS).some(t => !(x + w < t.x - 2 || x > t.x + t.w + 2 || y + h < t.y - 2 || y > t.y + t.h + 2))) continue;
+    if (taken.some(o => Math.abs(o.x - x) < 10 && Math.abs(o.y - y) < 9)) continue;
+    return box;
+  }
+  return { x: R(44, 100), y: R(80, 105), w, h };
+}
+function startLevel(i) {
+  level = i; mistakes = 0; parts = []; flying = []; drag = null;
+  Object.values(TARGETS).forEach(t => { t.count = 0; t.open = 0; });
+  const L = LEVELS[i], pickd = [];
+  ['toy', 'book', 'cloth', 'trash'].forEach(c => pickd.push(...shuffle(ITEMS.filter(it => it.cat === c)).slice(0, L.per)));
+  items = [];
+  shuffle(pickd).forEach(it => { const sp = S[it.s], p = freeSpot(sp.width, sp.height, items);
+    items.push({ ...it, img: sp, x: p.x, y: p.y, w: sp.width, h: sp.height, hx: p.x, hy: p.y }); });
+  dust = [];
+  phase = 'items'; t0 = performance.now(); elapsed = 0;
+  ['ovStart', 'ovLevels', 'ovWin'].forEach(o => $(o).classList.remove('on'));
+  $('hLevel').textContent = `Уровень ${i + 1}`;
+  say(`«${L.name}»: разложи вещи по местам!`);
+}
+function spawnDust() {
+  dust = []; for (let i = 0; i < LEVELS[level].dust; i++) { const p = freeSpot(8, 4, dust); dust.push({ x: p.x, y: Math.max(p.y, 62), w: 8, h: 4, ph: Math.random() * 6 }); }
+  phase = 'dust'; say('Теперь вытри пыль — нажимай на серые пылинки!', 'good');
+}
+function say(t, cls = '') { const m = $('msg'); m.textContent = t; m.className = cls; }
+
+/* ===== управление ===== */
+function pt(e) { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * W / b.width, y: (e.clientY - b.top) * H / b.height }; }
+cv.addEventListener('pointerdown', e => {
+  if (phase === 'menu') return;
+  const p = pt(e);
+  if (phase === 'dust') {
+    for (let i = dust.length - 1; i >= 0; i--) if (inside(p, dust[i], 5)) {
+      const d = dust.splice(i, 1)[0]; sfx.poof();
+      for (let k = 0; k < 10; k++) parts.push({ x: d.x + 4, y: d.y + 2, vx: (Math.random() - .5) * 1.6, vy: -Math.random() * 1.2, life: 20, col: k % 2 ? '#ddd5dd' : '#fff' });
+      if (!dust.length) win(); else say(`Ещё пылинок: ${dust.length}`, 'good');
+      return;
+    }
+    return;
+  }
+  if (phase !== 'items') return;
+  const order = items.slice().sort((a, b) => (b.y + b.h) - (a.y + a.h));
+  const it = order.find(o => inside(p, o, 3));
+  if (!it) return;
+  drag = { it, ox: p.x - it.x, oy: p.y - it.y, hover: null };
+  cv.setPointerCapture(e.pointerId); sfx.pick(); say(it.n);
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const p = pt(e), it = drag.it;
+  it.x = Math.max(0, Math.min(W - it.w, p.x - drag.ox)); it.y = Math.max(0, Math.min(H - it.h, p.y - drag.oy));
+  drag.hover = Object.keys(TARGETS).find(k => inside(p, TARGETS[k])) || null;
+});
+const endDrag = e => {
+  if (!drag) return;
+  const it = drag.it, p = pt(e), tk = Object.keys(TARGETS).find(k => inside(p, TARGETS[k]));
+  drag = null;
+  if (!tk) { it.y = Math.max(it.y, 58 - it.h + 4); it.hx = it.x; it.hy = it.y; return; }
+  if (tk === it.cat) {
+    items = items.filter(o => o !== it); const T = TARGETS[tk];
+    flying.push({ it, tx: T.x + T.w / 2 - it.w / 2, ty: T.y + T.h / 2 - it.h / 2, f: 0, T });
+    sfx.place();
+    say(items.length ? `${it.n} — на месте! Осталось: ${items.length}` : 'Все вещи на местах!', 'good');
+  } else {
+    mistakes++; sfx.wrong(); it.x = it.hx; it.y = it.hy; it.shake = 12;
+    const w = TARGETS[it.cat].where; say(`${it.n} — не сюда. ${w[0].toUpperCase() + w.slice(1)}!`, 'bad');
+  }
+};
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+
+/* ===== победа ===== */
+function win() {
+  phase = 'win'; elapsed = (performance.now() - t0) / 1000;
+  const stars = mistakes === 0 ? 3 : mistakes <= 2 ? 2 : 1;
+  if (stars > (best[level] || 0)) { best[level] = stars; store.set('best', best); }
+  sfx.win();
+  for (let k = 0; k < 80; k++) parts.push({ x: R(10, 150), y: R(0, 30), vx: (Math.random() - .5) * 1.2, vy: Math.random() * .8, life: R(40, 80), col: ['#ffd23f', '#4cc36a', '#ff8fc8', '#8fe0ff', '#fff'][k % 5] });
+  setTimeout(() => {
+    $('wStars').innerHTML = [1, 2, 3].map(i => `<span class="${i <= stars ? '' : 'dim'}">★</span>`).join('');
+    $('wTitle').textContent = stars === 3 ? 'Идеальный порядок!' : 'Чисто!';
+    $('wInfo').textContent = `Время: ${fmtT(elapsed)} · Ошибок: ${mistakes}` + (stars < 3 ? ' · Без ошибок — три звезды!' : '');
+    $('wTip').textContent = LEVELS[level].tip;
+    $('bNext').textContent = level < LEVELS.length - 1 ? 'Дальше ▶' : 'К уровням ▶';
+    $('ovWin').classList.add('on');
+  }, 1300);
+  say('Ура! Комната сияет ✨', 'good');
+}
+const fmtT = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+/* ===== меню ===== */
+function showLevels() {
+  phase = 'menu';
+  $('lvList').innerHTML = LEVELS.map((L, i) => `<button class="pbtn${best[i] === 3 ? ' green' : ''}" data-l="${i}">${i + 1}. ${L.name}<small>${L.per * 4} вещей</small>
+    <span>${[1, 2, 3].map(s => `<span class="${s <= (best[i] || 0) ? '' : 'dim'}">★</span>`).join('')}</span></button>`).join('');
+  ['ovStart', 'ovWin'].forEach(o => $(o).classList.remove('on')); $('ovLevels').classList.add('on');
+  say('Выбери уровень. За уборку без ошибок — три звезды!');
+}
+$('lvList').addEventListener('click', e => { const b = e.target.closest('[data-l]'); if (b) startLevel(+b.dataset.l); });
+$('bStart').addEventListener('click', () => { tone([[523, .06], [784, .08]]); showLevels(); });
+$('bAgain').addEventListener('click', () => startLevel(level));
+$('bNext').addEventListener('click', () => level < LEVELS.length - 1 ? startLevel(level + 1) : showLevels());
+$('hMenu').addEventListener('click', showLevels);
+const sndLabel = () => $('hSound').textContent = soundOn ? '🔊' : '🔈';
+$('hSound').addEventListener('click', () => { soundOn = !soundOn; store.set('sound', soundOn); sndLabel(); }); sndLabel();
+
+/* ===== масштаб ===== */
+function fit() {
+  const aw = innerWidth - 40, ah = innerHeight - 170;
+  let s = Math.min(aw / W, ah / H); if (s >= 2) s = Math.floor(s * 2) / 2;
+  cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px';
+}
+addEventListener('resize', fit); fit();
+
+/* ===== демо-беспорядок на заставке ===== */
+(function demo() {
+  const pickd = shuffle(ITEMS).slice(0, 10);
+  items = []; pickd.forEach(it => { const sp = S[it.s], p = freeSpot(sp.width, sp.height, items); items.push({ ...it, img: sp, x: p.x, y: p.y, w: sp.width, h: sp.height, hx: p.x, hy: p.y }); });
+})();
+
+/* ===== цикл ===== */
+function loop() {
+  frame++;
+  ctx.drawImage(room, 0, 0);
+  drawTargets(drag ? (drag.hover || true) : null);
+  Object.values(TARGETS).forEach(t => t.open > 0 && t.open--);
+  dust.forEach(d => { const yy = d.y + Math.round(Math.sin(frame / 12 + d.ph) * .6); ctx.drawImage(S.dust, d.x, yy);
+    if (frame % 30 < 15) rect(d.x + 3, yy - 3, 1, 1, '#fff'); });
+  const order = items.filter(o => !drag || o !== drag.it).sort((a, b) => (a.y + a.h) - (b.y + b.h));
+  order.forEach(o => { let dx = 0; if (o.shake) { dx = (o.shake % 4 < 2 ? -1 : 1); o.shake--; }
+    ctx.globalAlpha = .25; rect(o.x + 1, o.y + o.h - 1, o.w - 2, 2, '#2a1a2e'); ctx.globalAlpha = 1;
+    ctx.drawImage(o.img, Math.round(o.x + dx), Math.round(o.y)); });
+  if (drag) { const o = drag.it; ctx.globalAlpha = .3; rect(o.x + 1, o.y + o.h + 3, o.w - 2, 2, '#2a1a2e'); ctx.globalAlpha = 1; ctx.drawImage(o.img, Math.round(o.x), Math.round(o.y) - 2); }
+  flying = flying.filter(f => {
+    f.f++; const k = f.f / 12, it = f.it, x = it.x + (f.tx - it.x) * k, y = it.y + (f.ty - it.y) * k - Math.sin(k * Math.PI) * 10;
+    const sz = 1 - k * .5, w = it.w * sz, h = it.h * sz;
+    ctx.drawImage(it.img, Math.round(x + (it.w - w) / 2), Math.round(y + (it.h - h) / 2), Math.round(w), Math.round(h));
+    if (f.f >= 12) { f.T.count++; f.T.open = 28;
+      for (let i = 0; i < 12; i++) parts.push({ x: f.tx + it.w / 2, y: f.ty + it.h / 2, vx: (Math.random() - .5) * 2, vy: -Math.random() * 1.6, life: 18, col: i % 2 ? '#ffd23f' : '#fff' });
+      return false; }
+    return true;
+  });
+  if (phase === 'items' && !items.length && !flying.length) { phase = 'wait'; setTimeout(spawnDust, 450); }
+  parts = parts.filter(p => { p.x += p.vx; p.y += p.vy; p.vy += .05; p.life--; rect(Math.round(p.x), Math.round(p.y), 1, 1, p.col); return p.life > 0; });
+  if (phase === 'items' || phase === 'dust') elapsed = (performance.now() - t0) / 1000;
+  $('hTime').textContent = '⏱ ' + fmtT(elapsed);
+  $('hLeft').textContent = phase === 'dust' ? `Пыль: ${dust.length}` : `Вещей: ${items.length + flying.length}`;
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
